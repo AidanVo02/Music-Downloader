@@ -3,176 +3,167 @@ import os
 import sys
 import platform
 import requests
-import urllib.parse
 import subprocess
 import json
+import shutil 
 from datetime import datetime
 from bs4 import BeautifulSoup 
 
-# --- CẤU HÌNH ĐƯỜNG DẪN CỐ ĐỊNH ---
-def get_app_path():
-    """
-    Hàm xác định vị trí file EXE đang chạy.
-    Dùng hàm này để lưu file Config/History vĩnh viễn, không bị xóa khi tắt App.
-    """
-    if getattr(sys, 'frozen', False):
-        # Nếu đang chạy bằng file .exe
-        return os.path.dirname(sys.executable)
-    else:
-        # Nếu đang chạy bằng file code .py
-        return os.path.dirname(os.path.abspath(__file__))
+# --- CẤU HÌNH ĐƯỜNG DẪN DỮ LIỆU ---
+def get_user_data_folder():
+    app_name = "MusicDownloader"
+    if platform.system() == "Windows":
+        base_path = os.getenv('APPDATA')
+    elif platform.system() == "Darwin": # macOS
+        base_path = os.path.expanduser("~/Library/Application Support")
+    else: 
+        base_path = os.path.expanduser("~/.local/share")
+        
+    data_folder = os.path.join(base_path, app_name)
+    if not os.path.exists(data_folder):
+        try: os.makedirs(data_folder)
+        except: pass
+    return data_folder
 
-# Xác định các thư mục quan trọng
-APP_PATH = get_app_path()
-BASE_FOLDER = os.path.join(APP_PATH, "Downloads")
-DATA_FOLDER = os.path.join(APP_PATH, "data")
+DATA_FOLDER = get_user_data_folder()
 HISTORY_FILE = os.path.join(DATA_FOLDER, "history.json")
-
-# Đảm bảo folder 'data' luôn tồn tại để chứa file lịch sử
-if not os.path.exists(DATA_FOLDER):
-    os.makedirs(DATA_FOLDER)
+CONFIG_FILE_PATH = os.path.join(DATA_FOLDER, "config.json") 
+BASE_FOLDER = os.path.join(os.path.expanduser("~"), "Downloads", "Music_Downloaded")
 
 # ----------------------------------
 
 def resource_path(relative_path):
-    """
-    Hàm này chỉ dùng để lấy tài nguyên TĨNH (như icon, theme, ffmpeg)
-    được đóng gói BÊN TRONG file exe.
-    """
-    try:
-        base_path = sys._MEIPASS
-    except Exception:
-        base_path = os.path.abspath(".")
+    try: base_path = sys._MEIPASS
+    except: base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
 def get_ffmpeg_path():
-    """Tìm FFmpeg thông minh (như phiên bản trước)"""
+    """
+    Hàm tìm kiếm FFmpeg 'tận cùng ngõ hẻm' cho macOS
+    """
     if platform.system() == "Windows":
-        exe_name = "ffmpeg.exe"
-        # 1. Tìm trong folder 'bin' cạnh file exe (Ưu tiên)
-        path_in_bin = os.path.join(APP_PATH, "bin", exe_name)
-        if os.path.exists(path_in_bin): return path_in_bin
-            
-        # 2. Tìm trong folder nội bộ (resource)
-        path_internal = resource_path(os.path.join("bin", exe_name))
-        if os.path.exists(path_internal): return path_internal
-            
+        # Windows giữ nguyên logic cũ
+        if getattr(sys, 'frozen', False): base_path = os.path.dirname(sys.executable)
+        else: base_path = os.path.dirname(os.path.abspath(__file__))
+        path = os.path.join(base_path, "bin", "ffmpeg.exe")
+        if os.path.exists(path): return path
         return "ffmpeg"
     else:
-        return "ffmpeg"
+        # --- LOGIC MỚI CHO MAC ---
+        # 1. Kiểm tra các đường dẫn Homebrew phổ biến (Ưu tiên số 1)
+        mac_paths = [
+            "/opt/homebrew/bin/ffmpeg",  # Mac M1/M2/M3
+            "/usr/local/bin/ffmpeg",     # Mac Intel
+            "/usr/bin/ffmpeg",           # System
+            "/bin/ffmpeg"
+        ]
+        
+        for p in mac_paths:
+            if os.path.exists(p):
+                print(f"DEBUG: Tìm thấy FFmpeg tại {p}")
+                return p
+        
+        # 2. Nếu không thấy, thử hỏi hệ thống
+        path = shutil.which("ffmpeg")
+        if path: return path
+            
+        return "ffmpeg" # Fallback
 
 def create_base_folder():
-    if not os.path.exists(BASE_FOLDER):
-        os.makedirs(BASE_FOLDER)
+    if not os.path.exists(BASE_FOLDER): os.makedirs(BASE_FOLDER)
 
 def get_existing_playlists():
     create_base_folder()
     try:
         items = os.listdir(BASE_FOLDER)
-        playlists = [item for item in items if os.path.isdir(os.path.join(BASE_FOLDER, item))]
-        return playlists
-    except:
-        return []
+        return [i for i in items if os.path.isdir(os.path.join(BASE_FOLDER, i))]
+    except: return []
 
-# --- QUẢN LÝ LỊCH SỬ (ĐÃ SỬA LỖI MẤT FILE) ---
+# --- QUẢN LÝ LỊCH SỬ ---
 def load_history():
-    # Đọc trực tiếp từ đường dẫn cố định HISTORY_FILE
-    if not os.path.exists(HISTORY_FILE): 
-        return []
+    if not os.path.exists(HISTORY_FILE): return []
     try:
-        with open(HISTORY_FILE, "r", encoding="utf-8") as f: 
-            return json.load(f)
-    except: 
-        return []
+        with open(HISTORY_FILE, "r", encoding="utf-8") as f: return json.load(f)
+    except: return []
 
 def add_to_history(song_name, file_path):
     current_hist = load_history()
-
     new_record = {
-        "name": song_name,
-        "path": file_path,
+        "name": song_name, "path": file_path,
         "time": datetime.now().strftime("%d/%m/%Y %H:%M")
     }
-    
     current_hist.insert(0, new_record)
     if len(current_hist) > 100: current_hist = current_hist[:100]
-    
     try:
-        # Ghi vào đường dẫn cố định
         with open(HISTORY_FILE, "w", encoding="utf-8") as f:
             json.dump(current_hist, f, indent=4, ensure_ascii=False)
-    except Exception as e:
-        print(f"Lỗi lưu history: {e}")
+    except: pass
 
 def clear_history_data():
     try:
-        with open(HISTORY_FILE, "w", encoding="utf-8") as f: json.dump([], f)
-        return True
+        with open(HISTORY_FILE, "w", encoding="utf-8") as f: json.dump([], f); return True
     except: return False
 
-# --- CÁC HÀM XỬ LÝ MẠNG (GIỮ NGUYÊN) ---
+# --- XỬ LÝ TẢI ---
 def get_spotify_track_name(url):
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-        response = requests.get(url, headers=headers)
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.content, 'html.parser')
+        h = {'User-Agent': 'Mozilla/5.0'}
+        r = requests.get(url, headers=h)
+        if r.status_code == 200:
+            soup = BeautifulSoup(r.content, 'html.parser')
             return soup.title.string.replace(" | Spotify", "").replace("Song by ", "")
-        return None
     except: return None
 
 def generate_search_query(query):
-    final_keyword = query
+    final = query
     if "spotify.com" in query:
-        track_name = get_spotify_track_name(query)
-        if track_name: final_keyword = f"{track_name} Official Audio"
-        else: return None 
-    elif "youtube.com" in query or "youtu.be" in query:
-        return query 
-    else:
-        final_keyword = f"{query} Official Audio"
-    return f"ytsearch1:{final_keyword}"
+        name = get_spotify_track_name(query)
+        if name: final = f"{name} Official Audio"
+        else: return None
+    elif "youtube.com" in query or "youtu.be" in query: return query
+    else: final = f"{query} Official Audio"
+    return f"ytsearch1:{final}"
 
 def download_single_song(query, save_folder, codec='mp3', quality='320'):
     try:
         create_base_folder()
-        search_query = generate_search_query(query)
-        if not search_query: raise Exception("Không tìm thấy bài hát")
+        q = generate_search_query(query)
+        if not q: raise Exception("Not found")
 
-        ffmpeg_location = get_ffmpeg_path()
-        print(f"DEBUG: Dùng FFmpeg tại: {ffmpeg_location}")
-
+        ffmpeg_loc = get_ffmpeg_path()
+        
+        # Cấu hình chuyển đổi (Post-processing)
         ydl_opts = {
             'format': 'bestaudio/best',
             'outtmpl': f'{save_folder}/%(title)s.%(ext)s',
-            'http_headers': {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'},
+            'http_headers': {'User-Agent': 'Mozilla/5.0'},
             'writethumbnail': False, 
-            'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': codec, 'preferredquality': quality}],
-            'ffmpeg_location': ffmpeg_location,
+            'ffmpeg_location': ffmpeg_loc, # <--- Quan trọng
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': codec,   # Ép chuyển sang mp3/m4a...
+                'preferredquality': quality
+            }],
             'noplaylist': True, 'quiet': True, 'no_warnings': True,
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(search_query, download=True)
+            info = ydl.extract_info(q, download=True)
             if 'entries' in info: info = info['entries'][0]
             
-            filename_base = ydl.prepare_filename(info).rsplit('.', 1)[0]
-            final_path = f"{filename_base}.{codec}"
+            # Lấy tên file kết quả (đã đổi đuôi)
+            fname = ydl.prepare_filename(info).rsplit('.', 1)[0]
+            final_path = f"{fname}.{codec}"
             
-            # Ghi lịch sử
             add_to_history(info.get('title', query), final_path)
 
-        return True, "Thành công"
+        return True, "Success"
 
     except Exception as e:
-        error_msg = str(e)
-        print(f"LỖI: {error_msg}")
-        if "403" in error_msg: return False, "Lỗi 403 (Bị chặn). Hãy Update Core."
-        if "ffmpeg" in error_msg.lower(): return False, "Lỗi: Không tìm thấy FFmpeg (Check folder bin)."
-        return False, error_msg
+        return False, str(e)
 
 def update_core_system():
     try:
         subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "yt-dlp"])
-        return True, "Cập nhật thành công!"
-    except: return False, "Lỗi cập nhật."
+        return True, "Updated!"
+    except: return False, "Failed."
