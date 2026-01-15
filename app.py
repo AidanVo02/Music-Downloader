@@ -5,6 +5,8 @@ import os
 import sys
 import json
 import pyperclip 
+import platform   # <--- Thêm thư viện này để check hệ điều hành
+import subprocess # <--- Thêm thư viện này để chạy lệnh mở file trên Mac
 
 try:
     import logic
@@ -35,7 +37,7 @@ LANGUAGES = {
         "lbl_lang": "Ngôn ngữ / Language:", "btn_update": "KIỂM TRA CẬP NHẬT (Core)",
         "btn_updating": "ĐANG CẬP NHẬT...", "msg_success": "Thành công",
         "msg_saved": "Đã lưu nhạc tại:", "msg_restart": "Cần khởi động lại App để đổi ngôn ngữ.\nThoát ngay?",
-        "version": "Phiên bản: v2.0 (Final)"
+        "version": "Phiên bản: v2.1 (Mac Support)"
     },
     "en": {
         "app_title": "MUSIC DOWNLOADER",
@@ -51,11 +53,13 @@ LANGUAGES = {
         "lbl_lang": "Language / Ngôn ngữ:", "btn_update": "CHECK FOR UPDATES (Core)",
         "btn_updating": "UPDATING...", "msg_success": "Success",
         "msg_saved": "Music saved at:", "msg_restart": "Restart required to change language.\nExit now?",
-        "version": "Version: v2.0 (Final)"
+        "version": "Version: v2.1 (Mac Support)"
     }
 }
 
-CONFIG_FILE = "config.json"
+# Lấy đường dẫn config từ logic
+CONFIG_FILE = getattr(logic, 'CONFIG_FILE_PATH', "config.json")
+
 def load_config():
     if not os.path.exists(CONFIG_FILE): return {"language": "vi"}
     try:
@@ -64,10 +68,12 @@ def load_config():
 
 def save_config(lang_code):
     try:
+        folder = os.path.dirname(CONFIG_FILE)
+        if not os.path.exists(folder): os.makedirs(folder)
         with open(CONFIG_FILE, "w") as f: json.dump({"language": lang_code}, f)
     except: pass
 
-# --- CẤU HÌNH THEME (TRỎ VÀO THƯ MỤC ASSETS) ---
+# --- CẤU HÌNH THEME ---
 ctk.set_appearance_mode("Dark")
 try:
     theme_path = resource_path(os.path.join("assets", "studio_theme.json"))
@@ -160,12 +166,26 @@ class MusicApp(ctk.CTk):
             ctk.CTkLabel(row, text=f"[{item['time']}]", font=("Consolas", 11), text_color="gray", width=120).pack(side="left")
             name = item['name'][:37]+"..." if len(item['name'])>40 else item['name']
             ctk.CTkLabel(row, text=name, font=FONT_MAIN, anchor="w").pack(side="left", padx=10, fill="x", expand=True)
+            # Truyền path vào hàm mở file an toàn
             ctk.CTkButton(row, text=self.txt["btn_open"], width=80, height=25, fg_color="#334155",
-                          command=lambda p=item['path']: self.open_file(p)).pack(side="right", padx=5)
+                          command=lambda p=item['path']: self.open_file_safe(p)).pack(side="right", padx=5)
 
-    def open_file(self, path):
-        if os.path.exists(path): os.startfile(path)
-        else: messagebox.showwarning("Error", "File not found")
+    # --- HÀM MỞ FILE ĐA NỀN TẢNG (QUAN TRỌNG) ---
+    def open_file_safe(self, path):
+        if not os.path.exists(path):
+            messagebox.showwarning("Error", "File not found / Không tìm thấy file")
+            return
+
+        try:
+            if platform.system() == "Windows":
+                os.startfile(path) # Chỉ chạy trên Windows
+            elif platform.system() == "Darwin": # macOS
+                subprocess.call(["open", path])
+            else: # Linux
+                subprocess.call(["xdg-open", path])
+        except Exception as e:
+            print(f"Lỗi mở file: {e}")
+    # ---------------------------------------------
 
     def clear_his(self):
         if messagebox.askyesno("Confirm", "Sure?"): logic.clear_history_data(); self.refresh_his()
@@ -259,7 +279,12 @@ class MusicApp(ctk.CTk):
         self.btn_download.configure(state="normal", text=self.txt["btn_download"])
         self.progress_bar.set(0); self.refresh_his()
         messagebox.showinfo(self.txt["msg_success"], f"{self.txt['msg_saved']}\n{folder}")
-        try: os.startfile(folder)
+        
+        # Mở thư mục kết quả an toàn
+        try:
+            if platform.system() == "Windows": os.startfile(folder)
+            elif platform.system() == "Darwin": subprocess.call(["open", folder])
+            else: subprocess.call(["xdg-open", folder])
         except: pass
 
     def start_update_thread(self):
