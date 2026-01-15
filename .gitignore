@@ -1,0 +1,18 @@
+# Bỏ qua thư mục ảo và cache
+__pycache__/
+*.py[cod]
+venv/
+env/
+.env
+
+# Bỏ qua file build cũ
+build/
+dist/
+*.spec
+
+# Bỏ qua file cấu hình người dùng (để sang Mac nó tự tạo mới)
+data/
+Downloads/
+
+# Bỏ qua file hệ thống Mac (nếu lỡ có)
+.DS_Store
