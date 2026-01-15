@@ -5,7 +5,7 @@ Do ứng dụng được phát triển bởi lập trình viên độc lập (ch
 Vui lòng làm theo các bước sau để mở App:
 
 ### Bước 1: Tải và Giải nén
-1.  Truy cập mục **[Releases](link-den-github-release-cua-ban)** bên phải.
+1.  Truy cập mục https://github.com/AidanVo02/Music-Downloader/releases/tag/v1.0 bên phải.
 2.  Tải file `Music_Downloader_Mac.zip`.
 3.  Click đúp vào file `.zip` để giải nén, bạn sẽ nhận được file `Music Downloader.app`.
 4.  (Khuyên dùng) Kéo file App này vào thư mục **Applications** (Ứng dụng) của máy.
