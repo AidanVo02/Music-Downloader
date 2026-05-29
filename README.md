@@ -28,6 +28,24 @@ Khi bạn click đúp để mở, macOS có thể báo lỗi: *"Music Downloader
 
 ---
 
+## 🛠️ Convert file (mới)
+
+Ứng dụng giờ hỗ trợ chuyển đổi file media sang audio (`mp3`, `wav`, `flac`, `m4a`) sử dụng `ffmpeg`.
+
+- Cách dùng: mở tab **HISTORY**, bấm **Convert** kế bên file đã tải, nhập định dạng mục tiêu (`mp3`, `wav`, `flac`, `m4a`).
+- Yêu cầu: cài `ffmpeg` và thêm vào `PATH` (Windows) hoặc cài qua Homebrew trên macOS:
+
+```powershell
+choco install ffmpeg    # Windows (chocolatey)
+```
+
+```bash
+brew install ffmpeg     # macOS
+```
+
+Hoặc tải binary từ https://ffmpeg.org/ và thêm vào PATH. Ứng dụng sẽ tìm `ffmpeg` tự động.
+
+
 ## 🪟 Hướng dẫn cài đặt trên Windows
 
 1.  Truy cập mục **[Releases](link-den-github-release-cua-ban)**.

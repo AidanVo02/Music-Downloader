@@ -1,5 +1,5 @@
 import customtkinter as ctk
-from tkinter import messagebox
+from tkinter import messagebox, simpledialog, filedialog
 import threading
 import os
 import sys
@@ -25,7 +25,7 @@ def resource_path(relative_path):
 LANGUAGES = {
     "vi": {
         "app_title": "MUSIC DOWNLOADER",
-        "tab_dl": "TẢI NHẠC", "tab_his": "LỊCH SỬ", "tab_sys": "HỆ THỐNG",
+        "tab_dl": "TẢI NHẠC", "tab_his": "LỊCH SỬ", "tab_sys": "HỆ THỐNG", "tab_conv": "CHUYỂN ĐỔI",
         "guide": "Danh sách bài hát / Link nhạc:",
         "input_placeholder": "Sơn Tùng MTP\nĐen Vâu\n(Nhập mỗi dòng một bài...)",
         "chk_playlist": "Tạo thư mục riêng", "switch_paste": "Tự dán Link",
@@ -35,13 +35,16 @@ LANGUAGES = {
         "status_detected": "Đã bắt Link:", "his_title": "LỊCH SỬ TẢI (100 BÀI)",
         "btn_clear": "Xóa Lịch Sử", "btn_open": "▶ Mở", "sys_title": "CÀI ĐẶT & CẬP NHẬT",
         "lbl_lang": "Ngôn ngữ / Language:", "btn_update": "KIỂM TRA CẬP NHẬT (Core)",
-        "btn_updating": "ĐANG CẬP NHẬT...", "msg_success": "Thành công",
+        "btn_updating": "ĐANG CẬP NHẬT...",         "msg_success": "Thành công",
         "msg_saved": "Đã lưu nhạc tại:", "msg_restart": "Cần khởi động lại App để đổi ngôn ngữ.\nThoát ngay?",
+        "msg_missing_content": "Vui lòng nhập tên bài hoặc link!",
+        "chk_bpm_key": "Phát hiện BPM & Key",
+        "status_analyzing": "Đang phân tích BPM & Key...",
         "version": "Phiên bản: v2.1 (Mac Support)"
     },
     "en": {
         "app_title": "MUSIC DOWNLOADER",
-        "tab_dl": "DOWNLOADER", "tab_his": "HISTORY", "tab_sys": "SYSTEM",
+        "tab_dl": "DOWNLOADER", "tab_his": "HISTORY", "tab_sys": "SYSTEM", "tab_conv": "CONVERT",
         "guide": "Song List / Links:",
         "input_placeholder": "Ed Sheeran\nTaylor Swift\n(Enter one song per line...)",
         "chk_playlist": "Create Playlist Folder", "switch_paste": "Auto-Paste",
@@ -51,8 +54,11 @@ LANGUAGES = {
         "status_detected": "Link Detected:", "his_title": "DOWNLOAD HISTORY (LAST 100)",
         "btn_clear": "Clear History", "btn_open": "▶ Open", "sys_title": "SETTINGS & UPDATES",
         "lbl_lang": "Language / Ngôn ngữ:", "btn_update": "CHECK FOR UPDATES (Core)",
-        "btn_updating": "UPDATING...", "msg_success": "Success",
+        "btn_updating": "UPDATING...",         "msg_success": "Success",
         "msg_saved": "Music saved at:", "msg_restart": "Restart required to change language.\nExit now?",
+        "msg_missing_content": "Please enter song name or link!",
+        "chk_bpm_key": "Detect BPM & Key",
+        "status_analyzing": "Detecting BPM & Key...",
         "version": "Version: v2.1 (Mac Support)"
     }
 }
@@ -61,10 +67,10 @@ LANGUAGES = {
 CONFIG_FILE = getattr(logic, 'CONFIG_FILE_PATH', "config.json")
 
 def load_config():
-    if not os.path.exists(CONFIG_FILE): return {"language": "vi"}
+    if not os.path.exists(CONFIG_FILE): return {"language": "en"}
     try:
         with open(CONFIG_FILE, "r") as f: return json.load(f)
-    except: return {"language": "vi"}
+    except: return {"language": "en"}
 
 def save_config(lang_code):
     try:
@@ -89,7 +95,7 @@ class MusicApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.config = load_config()
-        self.curr_lang_code = self.config.get("language", "vi")
+        self.curr_lang_code = self.config.get("language", "en")
         self.txt = LANGUAGES[self.curr_lang_code]
 
         self.title(self.txt["app_title"])
@@ -105,9 +111,11 @@ class MusicApp(ctk.CTk):
         self.tab_download = self.tabview.add(self.txt["tab_dl"])
         self.tab_history = self.tabview.add(self.txt["tab_his"])
         self.tab_system = self.tabview.add(self.txt["tab_sys"])
+        self.tab_convert = self.tabview.add(self.txt.get("tab_conv", "Convert"))
 
         self.setup_downloader_tab()
         self.setup_history_tab()
+        self.setup_convert_tab()
         self.setup_system_tab()
 
     def setup_downloader_tab(self):
@@ -133,12 +141,17 @@ class MusicApp(ctk.CTk):
                                             variable=self.var_monitor, command=self.toggle_monitor)
         self.switch_monitor.grid(row=0, column=1, padx=20, pady=15, sticky="e")
 
+        self.var_bpm_key = ctk.BooleanVar(value=True)
+        self.chk_bpm_key = ctk.CTkCheckBox(self.frame_options, text=self.txt["chk_bpm_key"], font=FONT_MAIN,
+                                           variable=self.var_bpm_key)
+        self.chk_bpm_key.grid(row=1, column=0, padx=20, pady=(0, 5), sticky="w")
+
         self.entry_playlist = ctk.CTkComboBox(self.frame_options, width=200, state="disabled", font=FONT_MAIN, values=[])
         self.entry_playlist.set(self.txt["combo_placeholder"])
-        self.entry_playlist.grid(row=1, column=0, padx=20, pady=(0, 15), sticky="ew")
+        self.entry_playlist.grid(row=2, column=0, padx=20, pady=(0, 15), sticky="ew")
 
         self.combo_format = ctk.CTkOptionMenu(self.frame_options, values=["MP3 (320kbps)", "M4A", "WAV", "FLAC"], font=FONT_MAIN)
-        self.combo_format.grid(row=1, column=1, padx=20, pady=(0, 15), sticky="ew")
+        self.combo_format.grid(row=2, column=1, padx=20, pady=(0, 15), sticky="ew")
 
         self.progress_bar = ctk.CTkProgressBar(parent, width=500, height=10); self.progress_bar.set(0)
         self.progress_bar.pack(pady=15)
@@ -169,6 +182,54 @@ class MusicApp(ctk.CTk):
             # Truyền path vào hàm mở file an toàn
             ctk.CTkButton(row, text=self.txt["btn_open"], width=80, height=25, fg_color="#334155",
                           command=lambda p=item['path']: self.open_file_safe(p)).pack(side="right", padx=5)
+            # Convert button
+            ctk.CTkButton(row, text="Convert", width=80, height=25, fg_color="#16a34a",
+                          command=lambda p=item['path']: self.ask_and_convert(p)).pack(side="right", padx=5)
+
+    def setup_convert_tab(self):
+        parent = self.tab_convert
+        frame = ctk.CTkFrame(parent)
+        frame.pack(pady=10, padx=10, fill="both")
+
+        ctk.CTkLabel(frame, text="Select file to convert", font=FONT_BOLD).pack(anchor="w", padx=15, pady=10)
+        row = ctk.CTkFrame(frame); row.pack(fill="x", padx=15, pady=5)
+        self.entry_convert_path = ctk.CTkEntry(row, placeholder_text="Path to file...", width=420)
+        self.entry_convert_path.pack(side="left", padx=(0,8), pady=6)
+        ctk.CTkButton(row, text="Browse", width=80, command=self.browse_file).pack(side="left", padx=(0,6))
+
+        # Options
+        opt_row = ctk.CTkFrame(frame); opt_row.pack(fill="x", padx=15, pady=8)
+        ctk.CTkLabel(opt_row, text="Format:", font=FONT_MAIN).pack(side="left", padx=(0,8))
+        self.conv_format = ctk.CTkOptionMenu(opt_row, values=["mp3", "wav", "flac", "m4a"], width=120)
+        self.conv_format.set("mp3")
+        self.conv_format.pack(side="left", padx=(0,14))
+        ctk.CTkLabel(opt_row, text="Bitrate:", font=FONT_MAIN).pack(side="left", padx=(0,8))
+        self.conv_bitrate = ctk.CTkEntry(opt_row, width=120)
+        self.conv_bitrate.insert(0, "192k")
+        self.conv_bitrate.pack(side="left")
+
+        self.btn_convert = ctk.CTkButton(frame, text="Convert", height=40, fg_color="#16a34a", command=self.start_convert_thread)
+        self.btn_convert.pack(pady=15, padx=15, fill="x")
+
+    def browse_file(self):
+        p = filedialog.askopenfilename(title="Select file", filetypes=[("Media files", "*.mp4 *.m4a *.mp3 *.wav *.flac *.mkv *.aac"), ("All files", "*")])
+        if p:
+            self.entry_convert_path.delete(0, 'end')
+            self.entry_convert_path.insert(0, p)
+
+    def start_convert_thread(self):
+        path = self.entry_convert_path.get().strip()
+        if not path or not os.path.exists(path):
+            messagebox.showwarning("Error", "File not found / Không tìm thấy file")
+            return
+        fmt = self.conv_format.get().strip().lower()
+        if fmt not in ('mp3', 'wav', 'flac', 'm4a'):
+            messagebox.showerror("Error", "Unsupported format")
+            return
+        bitrate = self.conv_bitrate.get().strip() or '192k'
+        # Start background conversion
+        self.btn_convert.configure(state="disabled")
+        threading.Thread(target=self.run_convert, args=(path, fmt, bitrate)).start()
 
     # --- HÀM MỞ FILE ĐA NỀN TẢNG (QUAN TRỌNG) ---
     def open_file_safe(self, path):
@@ -189,6 +250,44 @@ class MusicApp(ctk.CTk):
 
     def clear_his(self):
         if messagebox.askyesno("Confirm", "Sure?"): logic.clear_history_data(); self.refresh_his()
+
+    def ask_and_convert(self, path):
+        if not os.path.exists(path):
+            messagebox.showwarning("Error", "File not found / Không tìm thấy file")
+            return
+        # Ask user for target format
+        choice = simpledialog.askstring("Convert", "Enter target format (mp3, wav, flac, m4a):", initialvalue="mp3")
+        if not choice: return
+        fmt = choice.strip().lower()
+        if fmt not in ('mp3', 'wav', 'flac', 'm4a'):
+            messagebox.showerror("Error", "Unsupported format")
+            return
+        # Run conversion in background (no bitrate requested here)
+        threading.Thread(target=self.run_convert, args=(path, fmt, '192k')).start()
+
+    def run_convert(self, path, fmt, bitrate='192k'):
+        # Disable any relevant buttons
+        btns = []
+        if hasattr(self, 'btn_convert'): btns.append(self.btn_convert)
+        if hasattr(self, 'btn_download'): btns.append(self.btn_download)
+        for b in btns:
+            try: b.configure(state='disabled')
+            except: pass
+
+        try:
+            self.after(0, lambda: self.lbl_status.configure(text=f"Converting to {fmt}...", text_color="#f59e0b"))
+            suc, msg = logic.convert_file(path, fmt, bitrate)
+            if suc:
+                self.after(0, lambda: messagebox.showinfo("OK", f"Converted:\n{msg}"))
+            else:
+                self.after(0, lambda: messagebox.showerror("Error", f"Conversion failed:\n{msg}"))
+        except Exception as e:
+            self.after(0, lambda: messagebox.showerror("Error", str(e)))
+        finally:
+            self.after(0, lambda: self.lbl_status.configure(text=self.txt["status_ready"], text_color="gray"))
+            for b in btns:
+                try: b.configure(state='normal')
+                except: pass
 
     def setup_system_tab(self):
         parent = self.tab_system
@@ -251,9 +350,9 @@ class MusicApp(ctk.CTk):
             messagebox.showwarning("!", "Nhập tên Playlist!"); return
 
         self.btn_download.configure(state="disabled", text=self.txt["btn_downloading"])
-        threading.Thread(target=self.run_dl, args=(lst, pname, self.var_playlist.get(), self.combo_format.get())).start()
+        threading.Thread(target=self.run_dl, args=(lst, pname, self.var_playlist.get(), self.combo_format.get(), self.var_bpm_key.get())).start()
 
-    def run_dl(self, lst, pname, use_p, fmt):
+    def run_dl(self, lst, pname, use_p, fmt, detect_bpm_key_flag=False):
         folder = logic.BASE_FOLDER
         if use_p and pname:
             folder = os.path.join(logic.BASE_FOLDER, pname)
@@ -264,28 +363,39 @@ class MusicApp(ctk.CTk):
         elif "FLAC" in fmt: codec='flac'
         elif "M4A" in fmt: codec='m4a'
 
-        cnt=0; total=len(lst)
+        def on_progress(msg):
+            if msg == "analyzing":
+                self.after(0, lambda: self.lbl_status.configure(text=self.txt["status_analyzing"], text_color="#a78bfa"))
+
+        cnt=0; total=len(lst); errors=[]
         for i, q in enumerate(lst):
             if not q.strip(): continue
-            self.after(0, lambda: self.lbl_status.configure(text=f"Loading ({i+1}/{total}): {q[:20]}...", text_color="#0ea5e9"))
-            self.after(0, lambda: self.progress_bar.set((i+1)/total))
-            suc, _ = logic.download_single_song(q, folder, codec)
+            self.after(0, lambda i=i, q=q, t=total: self.lbl_status.configure(text=f"Loading ({i+1}/{t}): {q[:20]}...", text_color="#0ea5e9"))
+            self.after(0, lambda i=i, t=total: self.progress_bar.set((i+1)/t))
+            suc, msg = logic.download_single_song(q, folder, codec, detect_bpm_key_flag=detect_bpm_key_flag, progress_callback=on_progress)
             if suc: cnt+=1
+            else: errors.append(f"{q[:30]}: {msg}")
         
-        self.after(0, lambda: self.finish_dl(cnt, total, folder))
+        self.after(0, lambda: self.finish_dl(cnt, total, folder, errors))
 
-    def finish_dl(self, cnt, total, folder):
+    def finish_dl(self, cnt, total, folder, errors=None):
         self.lbl_status.configure(text=f"✅ {cnt}/{total}", text_color="white")
         self.btn_download.configure(state="normal", text=self.txt["btn_download"])
         self.progress_bar.set(0); self.refresh_his()
-        messagebox.showinfo(self.txt["msg_success"], f"{self.txt['msg_saved']}\n{folder}")
-        
-        # Mở thư mục kết quả an toàn
-        try:
-            if platform.system() == "Windows": os.startfile(folder)
-            elif platform.system() == "Darwin": subprocess.call(["open", folder])
-            else: subprocess.call(["xdg-open", folder])
-        except: pass
+        err = errors or []
+        if cnt > 0:
+            msg = f"{self.txt['msg_saved']}\n{folder}"
+            if err:
+                msg += f"\n\n{len(err)} failed."
+            messagebox.showinfo(self.txt["msg_success"], msg)
+            try:
+                if platform.system() == "Windows": os.startfile(folder)
+                elif platform.system() == "Darwin": subprocess.call(["open", folder])
+                else: subprocess.call(["xdg-open", folder])
+            except: pass
+        elif err:
+            err_msg = "\n".join(err[:5]) + ("\n..." if len(err) > 5 else "")
+            messagebox.showerror("Download Failed", f"Could not download:\n{err_msg}")
 
     def start_update_thread(self):
         self.btn_update.configure(state="disabled", text=self.txt["btn_updating"])
