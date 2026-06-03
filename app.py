@@ -1,102 +1,53 @@
 import customtkinter as ctk
-from tkinter import messagebox, simpledialog, filedialog
+from tkinter import messagebox, simpledialog, filedialog, Canvas
 import threading
 import os
 import sys
 import json
 import pyperclip 
-import platform   # <--- Thêm thư viện này để check hệ điều hành
-import subprocess # <--- Thêm thư viện này để chạy lệnh mở file trên Mac
+import platform
+import subprocess
 
 try:
-    import logic
-except ImportError:
-    messagebox.showerror("Error", "Thiếu file logic.py!")
+    from src import core, constants, utils
+    from src.ui import animations
+except ImportError as e:
+    messagebox.showerror("Error", f"Missing module: {e}")
     exit()
 
-def resource_path(relative_path):
-    try:
-        base_path = sys._MEIPASS
-    except Exception:
-        base_path = os.path.abspath(".")
-    return os.path.join(base_path, relative_path)
-
-# --- BỘ TỪ ĐIỂN NGÔN NGỮ ---
-LANGUAGES = {
-    "vi": {
-        "app_title": "MUSIC DOWNLOADER",
-        "tab_dl": "TẢI NHẠC", "tab_his": "LỊCH SỬ", "tab_sys": "HỆ THỐNG", "tab_conv": "CHUYỂN ĐỔI",
-        "guide": "Danh sách bài hát / Link nhạc:",
-        "input_placeholder": "Sơn Tùng MTP\nĐen Vâu\n(Nhập mỗi dòng một bài...)",
-        "chk_playlist": "Tạo thư mục riêng", "switch_paste": "Tự dán Link",
-        "combo_placeholder": "Chọn hoặc Nhập tên...",
-        "btn_download": "TẢI XUỐNG NGAY", "btn_downloading": "ĐANG TẢI...",
-        "status_ready": "Sẵn sàng.", "status_monitoring": "Đang theo dõi Clipboard...",
-        "status_detected": "Đã bắt Link:", "his_title": "LỊCH SỬ TẢI (100 BÀI)",
-        "btn_clear": "Xóa Lịch Sử", "btn_open": "▶ Mở", "sys_title": "CÀI ĐẶT & CẬP NHẬT",
-        "lbl_lang": "Ngôn ngữ / Language:", "btn_update": "KIỂM TRA CẬP NHẬT (Core)",
-        "btn_updating": "ĐANG CẬP NHẬT...",         "msg_success": "Thành công",
-        "msg_saved": "Đã lưu nhạc tại:", "msg_restart": "Cần khởi động lại App để đổi ngôn ngữ.\nThoát ngay?",
-        "msg_missing_content": "Vui lòng nhập tên bài hoặc link!",
-        "chk_bpm_key": "Phát hiện BPM & Key",
-        "status_analyzing": "Đang phân tích BPM & Key...",
-        "version": "Phiên bản: v2.1 (Mac Support)"
-    },
-    "en": {
-        "app_title": "MUSIC DOWNLOADER",
-        "tab_dl": "DOWNLOADER", "tab_his": "HISTORY", "tab_sys": "SYSTEM", "tab_conv": "CONVERT",
-        "guide": "Song List / Links:",
-        "input_placeholder": "Ed Sheeran\nTaylor Swift\n(Enter one song per line...)",
-        "chk_playlist": "Create Playlist Folder", "switch_paste": "Auto-Paste",
-        "combo_placeholder": "Select or Type Name...",
-        "btn_download": "DOWNLOAD NOW", "btn_downloading": "DOWNLOADING...",
-        "status_ready": "Ready.", "status_monitoring": "Monitoring Clipboard...",
-        "status_detected": "Link Detected:", "his_title": "DOWNLOAD HISTORY (LAST 100)",
-        "btn_clear": "Clear History", "btn_open": "▶ Open", "sys_title": "SETTINGS & UPDATES",
-        "lbl_lang": "Language / Ngôn ngữ:", "btn_update": "CHECK FOR UPDATES (Core)",
-        "btn_updating": "UPDATING...",         "msg_success": "Success",
-        "msg_saved": "Music saved at:", "msg_restart": "Restart required to change language.\nExit now?",
-        "msg_missing_content": "Please enter song name or link!",
-        "chk_bpm_key": "Detect BPM & Key",
-        "status_analyzing": "Detecting BPM & Key...",
-        "version": "Version: v2.1 (Mac Support)"
-    }
-}
-
-# Lấy đường dẫn config từ logic
-CONFIG_FILE = getattr(logic, 'CONFIG_FILE_PATH', "config.json")
-
-def load_config():
-    if not os.path.exists(CONFIG_FILE): return {"language": "en"}
-    try:
-        with open(CONFIG_FILE, "r") as f: return json.load(f)
-    except: return {"language": "en"}
-
-def save_config(lang_code):
-    try:
-        folder = os.path.dirname(CONFIG_FILE)
-        if not os.path.exists(folder): os.makedirs(folder)
-        with open(CONFIG_FILE, "w") as f: json.dump({"language": lang_code}, f)
-    except: pass
+# Import language dictionary and fonts
+LANGUAGES = constants.LANGUAGES
+FONT_MAIN = constants.FONT_MAIN
+FONT_BOLD = constants.FONT_BOLD
+FONT_TITLE = constants.FONT_TITLE
 
 # --- CẤU HÌNH THEME ---
 ctk.set_appearance_mode("Dark")
 try:
-    theme_path = resource_path(os.path.join("assets", "studio_theme.json"))
+    theme_path = utils.resource_path(os.path.join("assets", "studio_theme.json"))
     ctk.set_default_color_theme(theme_path)
 except Exception:
     ctk.set_default_color_theme("blue")
 
-FONT_MAIN = ("Segoe UI", 13)
-FONT_BOLD = ("Segoe UI", 13, "bold")
-FONT_TITLE = ("Segoe UI", 20, "bold")
+# Import language dictionary and fonts
+LANGUAGES = constants.LANGUAGES
+FONT_MAIN = constants.FONT_MAIN
+FONT_BOLD = constants.FONT_BOLD
+FONT_TITLE = constants.FONT_TITLE
 
 class MusicApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.config = load_config()
+        self.config = utils.load_config()
         self.curr_lang_code = self.config.get("language", "en")
         self.txt = LANGUAGES[self.curr_lang_code]
+        
+        # Initialize animation objects
+        self.loading_animation = None
+        self.analyzing_animation = None
+        
+        # Cleanup on window close
+        self.protocol("WM_DELETE_WINDOW", self._on_closing)
 
         self.title(self.txt["app_title"])
         self.geometry("750x680")
@@ -153,8 +104,19 @@ class MusicApp(ctk.CTk):
         self.combo_format = ctk.CTkOptionMenu(self.frame_options, values=["MP3 (320kbps)", "M4A", "WAV", "FLAC"], font=FONT_MAIN)
         self.combo_format.grid(row=2, column=1, padx=20, pady=(0, 15), sticky="ew")
 
-        self.progress_bar = ctk.CTkProgressBar(parent, width=500, height=10); self.progress_bar.set(0)
-        self.progress_bar.pack(pady=15)
+        # Create animation canvas (hidden by default)
+        self.canvas_animation = Canvas(
+            parent, 
+            width=700, height=100, 
+            bg="#212121", highlightthickness=0,
+            relief="flat"
+        )
+        
+        # Traditional progress bar (fallback/supplementary)
+        self.progress_bar = ctk.CTkProgressBar(parent, width=500, height=10)
+        self.progress_bar.set(0)
+        self.progress_bar.pack(pady=5, padx=20, fill="x")
+        
         self.btn_download = ctk.CTkButton(parent, text=self.txt["btn_download"], height=45, font=("Segoe UI", 14, "bold"),
                                           command=self.start_download_thread)
         self.btn_download.pack(pady=15, padx=20, fill="x")
@@ -172,7 +134,7 @@ class MusicApp(ctk.CTk):
 
     def refresh_his(self):
         for w in self.scroll_history.winfo_children(): w.destroy()
-        data = logic.load_history()
+        data = utils.load_history()
         if not data: ctk.CTkLabel(self.scroll_history, text="...", text_color="gray").pack(pady=20); return
         for item in data:
             row = ctk.CTkFrame(self.scroll_history, fg_color="transparent"); row.pack(fill="x", pady=2)
@@ -249,7 +211,7 @@ class MusicApp(ctk.CTk):
     # ---------------------------------------------
 
     def clear_his(self):
-        if messagebox.askyesno("Confirm", "Sure?"): logic.clear_history_data(); self.refresh_his()
+        if messagebox.askyesno("Confirm", "Sure?"): utils.clear_history(); self.refresh_his()
 
     def ask_and_convert(self, path):
         if not os.path.exists(path):
@@ -276,7 +238,7 @@ class MusicApp(ctk.CTk):
 
         try:
             self.after(0, lambda: self.lbl_status.configure(text=f"Converting to {fmt}...", text_color="#f59e0b"))
-            suc, msg = logic.convert_file(path, fmt, bitrate)
+            suc, msg = core.convert_file(path, fmt, bitrate)
             if suc:
                 self.after(0, lambda: messagebox.showinfo("OK", f"Converted:\n{msg}"))
             else:
@@ -305,7 +267,7 @@ class MusicApp(ctk.CTk):
     def change_lang(self, choice):
         new = "vi" if choice=="Tiếng Việt" else "en"
         if new != self.curr_lang_code:
-            save_config(new)
+            utils.save_config(new)
             if messagebox.askyesno("Restart", self.txt["msg_restart"]): self.destroy(); exit()
 
     def toggle_monitor(self):
@@ -332,7 +294,7 @@ class MusicApp(ctk.CTk):
     def toggle_playlist_entry(self):
         if self.var_playlist.get():
             self.entry_playlist.configure(state="normal")
-            try: ex = logic.get_existing_playlists()
+            try: ex = utils.get_existing_playlists()
             except: ex = []
             if ex: self.entry_playlist.configure(values=ex); self.entry_playlist.set(ex[0])
             else: self.entry_playlist.configure(values=[]); self.entry_playlist.set("")
@@ -353,9 +315,9 @@ class MusicApp(ctk.CTk):
         threading.Thread(target=self.run_dl, args=(lst, pname, self.var_playlist.get(), self.combo_format.get(), self.var_bpm_key.get())).start()
 
     def run_dl(self, lst, pname, use_p, fmt, detect_bpm_key_flag=False):
-        folder = logic.BASE_FOLDER
+        folder = utils.BASE_FOLDER
         if use_p and pname:
-            folder = os.path.join(logic.BASE_FOLDER, pname)
+            folder = os.path.join(utils.BASE_FOLDER, pname)
             if not os.path.exists(folder): os.makedirs(folder)
         
         codec = 'mp3'
@@ -363,19 +325,24 @@ class MusicApp(ctk.CTk):
         elif "FLAC" in fmt: codec='flac'
         elif "M4A" in fmt: codec='m4a'
 
+        # Start loading animation
+        self.after(0, self._start_loading_animation)
+
         def on_progress(msg):
             if msg == "analyzing":
-                self.after(0, lambda: self.lbl_status.configure(text=self.txt["status_analyzing"], text_color="#a78bfa"))
+                self.after(0, self._start_analyzing_animation)
 
         cnt=0; total=len(lst); errors=[]
         for i, q in enumerate(lst):
             if not q.strip(): continue
             self.after(0, lambda i=i, q=q, t=total: self.lbl_status.configure(text=f"Loading ({i+1}/{t}): {q[:20]}...", text_color="#0ea5e9"))
             self.after(0, lambda i=i, t=total: self.progress_bar.set((i+1)/t))
-            suc, msg = logic.download_single_song(q, folder, codec, detect_bpm_key_flag=detect_bpm_key_flag, progress_callback=on_progress)
+            suc, msg = core.download_single_song(q, folder, codec, detect_bpm_key_flag=detect_bpm_key_flag, progress_callback=on_progress)
             if suc: cnt+=1
             else: errors.append(f"{q[:30]}: {msg}")
         
+        # Stop animations
+        self.after(0, self._stop_animations)
         self.after(0, lambda: self.finish_dl(cnt, total, folder, errors))
 
     def finish_dl(self, cnt, total, folder, errors=None):
@@ -397,13 +364,70 @@ class MusicApp(ctk.CTk):
             err_msg = "\n".join(err[:5]) + ("\n..." if len(err) > 5 else "")
             messagebox.showerror("Download Failed", f"Could not download:\n{err_msg}")
 
+    def _start_loading_animation(self):
+        """Start the 3D bouncing sphere animation"""
+        try:
+            # Show canvas
+            self.canvas_animation.pack(pady=10, padx=20, fill="x", before=self.progress_bar)
+            self.canvas_animation.delete("all")
+            self.loading_animation = animations.LoadingAnimation(
+                self.canvas_animation,
+                canvas_width=self.canvas_animation.winfo_width(),
+                canvas_height=self.canvas_animation.winfo_height()
+            )
+            self.loading_animation.start()
+        except Exception as e:
+            print(f"Error starting loading animation: {e}")
+
+    def _start_analyzing_animation(self):
+        """Start the analyzing animation"""
+        try:
+            # Show canvas if not already shown
+            if not self.canvas_animation.winfo_manager():
+                self.canvas_animation.pack(pady=10, padx=20, fill="x", before=self.progress_bar)
+            
+            self.canvas_animation.delete("all")
+            if self.loading_animation:
+                self.loading_animation.stop()
+            
+            self.analyzing_animation = animations.AnalyzingAnimation(
+                self.canvas_animation,
+                canvas_width=self.canvas_animation.winfo_width(),
+                canvas_height=self.canvas_animation.winfo_height()
+            )
+            self.analyzing_animation.start()
+        except Exception as e:
+            print(f"Error starting analyzing animation: {e}")
+
+    def _stop_animations(self):
+        """Stop all running animations"""
+        try:
+            if self.loading_animation:
+                self.loading_animation.stop()
+                self.loading_animation = None
+            
+            if self.analyzing_animation:
+                self.analyzing_animation.stop()
+                self.analyzing_animation = None
+            
+            self.canvas_animation.delete("all")
+            # Hide canvas when not in use
+            self.canvas_animation.pack_forget()
+        except Exception as e:
+            print(f"Error stopping animations: {e}")
+
+    def _on_closing(self):
+        """Handle window closing event"""
+        self._stop_animations()
+        self.destroy()
+
     def start_update_thread(self):
         self.btn_update.configure(state="disabled", text=self.txt["btn_updating"])
         self.lbl_up_status.configure(text="...", text_color="#eab308")
         threading.Thread(target=self.run_up).start()
 
     def run_up(self):
-        suc, msg = logic.update_core_system()
+        suc, msg = core.update_core_system()
         self.after(0, lambda: self.fin_up(suc, msg))
 
     def fin_up(self, suc, msg):
