@@ -7,3 +7,5 @@ mutagen
 Pillow
 librosa
 numpy
+# Optional on Linux/macOS: `pip install essentia`
+# Native Windows Python bindings are not supported; see docs/ESSENTIA_SETUP.md.
